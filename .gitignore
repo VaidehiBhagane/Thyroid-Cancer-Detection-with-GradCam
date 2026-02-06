@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+wheels/
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Model checkpoints (keep only the main model)
+*.ckpt
+checkpoint/
+
+# Streamlit
+.streamlit/
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+*.ipynb
+
+# Data files (if sensitive)
+*.csv
+*.xlsx
+
+# Temporary files
+tmp/
+temp/
+
