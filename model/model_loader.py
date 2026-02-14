@@ -1,4 +1,3 @@
-import streamlit as st
 import logging
 import keras
 import tensorflow as tf
@@ -106,7 +105,6 @@ class DepthwiseSeparableConv(keras.layers.Layer):
 # --------------------------------------------------
 # Load model
 # --------------------------------------------------
-@st.cache_resource
 def load_model():
     """Load the pre-trained thyroid cancer detection model."""
     try:
@@ -143,9 +141,7 @@ def load_model():
     
     except FileNotFoundError:
         logger.error("Model file 'thyroid_cancer_model.h5' not found")
-        st.error("❌ Model file not found. Please ensure 'thyroid_cancer_model.h5' is in the project directory.")
-        st.stop()
+        raise FileNotFoundError("Model file 'thyroid_cancer_model.h5' not found. Please ensure it's in the project directory.")
     except Exception as e:
         logger.error(f"Error loading model: {str(e)}")
-        st.error(f"❌ Failed to load model: {str(e)}")
-        st.stop()
+        raise Exception(f"Failed to load model: {str(e)}")
