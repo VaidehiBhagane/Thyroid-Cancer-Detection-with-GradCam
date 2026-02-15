@@ -1,0 +1,219 @@
+"""API routes for Thyroid Cancer Detection API"""
+import logging
+from datetime import datetime
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
+import numpy as np
+import cv2
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+from io import BytesIO
+import json
+
+from api.schemas import *
+from utils.image_utils import preprocess_base64_image, encode_numpy_to_base64
+from utils.gradcam import make_gradcam_heatmap
+from utils.pdf_generator import generate_pdf_report
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+_model = None
+
+def set_model(model):
+    global _model
+    _model = model
+
+def get_model():
+    return _model if _model else __import__('app').get_model()
+
+# ============ Core Functions ============
+
+def validate(image_data: str):
+    """Validate model and image"""
+    model = get_model()
+    if not model:
+        raise HTTPException(503, "Model not available")
+    if not image_data or len(image_data) > 10485760:  # 10MB
+        raise HTTPException(400, "Invalid image data or size")
+    return model
+
+def classify(prediction):
+    """Get classification data"""
+    cls = int(prediction >= 0.5)
+    return cls, ["Benign (Non-Cancerous)", "Malignant (Cancerous)"][cls], \
+           (prediction if cls else 1 - prediction) * 100
+
+def assess_risk(cls, pred):
+    """Get risk assessment"""
+    if cls:
+        return ("High Risk", "Immediate specialist consultation and biopsy recommended") if pred >= 0.75 \
+          else ("Moderate Risk", "Further diagnostic tests and specialist review advised")
+    return ("Low Risk", "Routine monitoring recommended") if pred <= 0.25 \
+      else ("Borderline", "Follow-up imaging in 6-12 months advised")
+
+def get_conv_layer(model, layer_name=None):
+    """Find last conv layer"""
+    if layer_name:
+        return layer_name
+    layers = [l.name for l in model.layers if 'conv' in l.name.lower()]
+    if not layers:
+        raise HTTPException(400, "No conv layers found")
+    return layers[-1]
+
+def create_gradcam_vis(heatmap, original_pil):
+    """Create Grad-CAM images"""
+    img = np.array(original_pil.resize((224, 224)))
+    img = img / 255.0 if img.max() > 1 else img
+    heat = cv2.resize(heatmap, (224, 224))
+    heat_colored = (plt.cm.jet(heat)[:, :, :3] * 255).astype(np.uint8)
+    overlay = cv2.addWeighted((img * 255).astype(np.uint8), 0.6, heat_colored, 0.4, 0)
+    return {
+        "original": encode_numpy_to_base64((img * 255).astype(np.uint8)),
+        "heatmap": encode_numpy_to_base64(heat_colored),
+        "overlay": encode_numpy_to_base64(overlay)
+    }
+
+def predict_image(image_data: str, filename: str = None):
+    """Process and predict"""
+    try:
+        processed, original = preprocess_base64_image(image_data)
+        pred = float(get_model().predict(processed, verbose=0)[0][0])
+        if np.isnan(pred) or np.isinf(pred):
+            raise ValueError("Invalid prediction")
+        logger.info(f"{filename or 'unknown'}: {pred:.4f}")
+        return processed, original, pred
+    except Exception as e:
+        logger.error(f"Prediction error: {e}")
+        raise HTTPException(500, "Prediction failed")
+
+def get_timestamp():
+    """Get current timestamp"""
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+# ============ Endpoints ============
+
+@router.get("/health", response_model=HealthResponse)
+async def health_check():
+    model = get_model()
+    return HealthResponse(
+        status="healthy" if model else "unhealthy",
+        model_loaded=bool(model),
+        timestamp=get_timestamp(),
+        version="2.0.0"
+    )
+
+@router.get("/model-info", response_model=ModelInfoResponse)
+async def get_model_info():
+    try:
+        model = validate("")  # Just validate model exists
+        return ModelInfoResponse(
+            model_name="Thyroid Cancer Detection Model",
+            input_shape=list(model.input_shape),
+            output_shape=list(model.output_shape),
+            total_parameters=model.count_params(),
+            classes={"0": "Benign (Non-Cancerous)", "1": "Malignant (Cancerous)"},
+            conv_layers=[l.name for l in model.layers if 'conv' in l.name.lower()]
+        )
+    except:
+        raise HTTPException(503, "Model not available")
+
+@router.post("/predict", response_model=PredictionResponse)
+async def predict(request: ImageRequest):
+    try:
+        validate(request.image)
+        _, _, pred = predict_image(request.image, request.filename)
+        cls, label, conf = classify(pred)
+        risk, rec = assess_risk(cls, pred)
+        
+        return PredictionResponse(
+            success=True, timestamp=get_timestamp(), filename=request.filename,
+            prediction={"class": cls, "label": label, "confidence_score": float(pred), 
+                       "confidence_percentage": float(conf)},
+            risk_assessment=risk, recommendation=rec
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Predict error: {e}")
+        raise HTTPException(500, "Prediction failed")
+
+@router.post("/gradcam", response_model=GradCAMResponse)
+async def generate_gradcam(request: GradCAMRequest):
+    try:
+        model = validate(request.image)
+        processed, original, pred = predict_image(request.image, request.filename)
+        cls, label, _ = classify(pred)
+        layer = get_conv_layer(model, request.layer_name)
+        heatmap = make_gradcam_heatmap(processed, model, layer)
+        
+        return GradCAMResponse(
+            success=True, timestamp=get_timestamp(), filename=request.filename,
+            layer_used=layer, images=create_gradcam_vis(heatmap, original),
+            prediction={"class": cls, "label": label, "confidence_score": float(pred)}
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"GradCAM error: {e}")
+        raise HTTPException(500, "Grad-CAM failed")
+
+@router.post("/analyze", response_model=AnalyzeResponse)
+async def analyze_complete(request: AnalyzeRequest):
+    try:
+        model = validate(request.image)
+        processed, original, pred = predict_image(request.image, request.filename)
+        cls, label, conf = classify(pred)
+        risk, rec = assess_risk(cls, pred)
+        
+        gradcam_data = None
+        if request.include_gradcam:
+            try:
+                layer = get_conv_layer(model)
+                heatmap = make_gradcam_heatmap(processed, model, layer)
+                gradcam_data = {"layer_used": layer, "images": create_gradcam_vis(heatmap, original)}
+            except Exception as e:
+                logger.warning(f"GradCAM skipped: {e}")
+        
+        return AnalyzeResponse(
+            success=True, timestamp=get_timestamp(), filename=request.filename,
+            prediction={"class": cls, "label": label, "confidence_score": float(pred),
+                       "confidence_percentage": float(conf)},
+            risk_assessment=risk, recommendation=rec, gradcam=gradcam_data
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Analysis error: {e}")
+        raise HTTPException(500, "Analysis failed")
+
+@router.post("/report/pdf")
+async def download_pdf_report(request: AnalyzeRequest):
+    try:
+        result = await analyze_complete(request)
+        pdf = generate_pdf_report({
+            'timestamp': result.timestamp, 
+            'filename': result.filename or 'Unknown',
+            'prediction': result.prediction, 
+            'risk_assessment': result.risk_assessment,
+            'recommendation': result.recommendation
+        }, result.gradcam if request.include_gradcam else None)
+        
+        fname = f"thyroid_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        return StreamingResponse(pdf, media_type="application/pdf",
+                               headers={"Content-Disposition": f"attachment; filename={fname}"})
+    except Exception as e:
+        logger.error(f"PDF error: {e}")
+        raise HTTPException(500, "PDF failed")
+
+@router.post("/report/json")
+async def download_json_report(request: AnalyzeRequest):
+    try:
+        result = await analyze_complete(request)
+        json_buf = BytesIO(json.dumps(result.dict(), indent=2).encode())
+        fname = f"thyroid_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        return StreamingResponse(json_buf, media_type="application/json",
+                               headers={"Content-Disposition": f"attachment; filename={fname}"})
+    except Exception as e:
+        logger.error(f"JSON error: {e}")
+        raise HTTPException(500, "JSON failed")

@@ -8,6 +8,7 @@ python-multipart>=0.0.6
 tensorflow>=2.12.0
 numpy>=1.24.0
 h5py>=3.8.0
+huggingface-hub>=0.20.0
 
 # Image Processing
 Pillow>=10.0.0
@@ -17,5 +18,5 @@ matplotlib>=3.7.0
 # PDF Generation
 reportlab>=4.0.0
 
-# Legacy Streamlit (for reference/backup)
-# streamlit>=1.28.0
+# Streamlit UI (alternative to FastAPI + React)
+streamlit>=1.28.0

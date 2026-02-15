@@ -32,6 +32,7 @@ logs/
 # Model checkpoints (keep only the main model)
 *.ckpt
 checkpoint/
+model_cache/
 
 # Streamlit
 .streamlit/

@@ -59,21 +59,15 @@ pip install -r requirements.txt
 This installs:
 - FastAPI (web framework)
 - TensorFlow (ML model)
+- HuggingFace Hub (model download)
 - Uvicorn (ASGI server)
 - ReportLab (PDF generation)
 - OpenCV, Pillow (image processing)
 - And more...
 
-### Step 4: Verify Model File Exists
+### Step 4: Start the Backend Server
 
-```bash
-# Check if model file is present
-dir thyroid_cancer_model.h5
-```
-
-The file should be approximately **3.5 MB**. If missing, you need the trained model file.
-
-### Step 5: Start the Backend Server
+**Note:** The model will be automatically downloaded from HuggingFace on first startup.
 
 ```bash
 python app.py
@@ -194,10 +188,12 @@ pip install --upgrade -r requirements.txt
 uvicorn app:app --port 8001 --reload
 ```
 
-**Problem:** `Model file not found`
+**Problem:** `Model file not found` or `Failed to download model`
 ```bash
-# Solution: Verify model file exists
-# Should be in: e:\thyroid with gradcam\thyroid_cancer\thyroid_cancer_model.h5
+# Solution 1: Check internet connection
+# Solution 2: Clear model cache and restart
+# The model will be automatically downloaded from HuggingFace:
+# Repository: vaidehibh/fibonacci_cnn
 ```
 
 **Problem:** `ImportError: cannot import name 'generate_pdf_report'`
@@ -252,16 +248,17 @@ npm run dev -- --port 3001
 thyroid_cancer/
 ├── backend (FastAPI)
 │   ├── app.py                 # Main FastAPI app
+│   ├── config.py             # Configuration settings
 │   ├── api/
 │   │   ├── routes.py         # API endpoints
 │   │   └── schemas.py        # Pydantic models
 │   ├── model/
-│   │   └── model_loader.py   # ML model loader
+│   │   └── model_loader.py   # ML model loader from HuggingFace
+│   ├── model_cache/          # Downloaded model cache
 │   ├── utils/
 │   │   ├── gradcam.py        # Grad-CAM generation
 │   │   ├── pdf_generator.py # PDF report generation
 │   │   └── image_utils.py    # Image processing
-│   ├── thyroid_cancer_model.h5  # Trained model
 │   └── requirements.txt      # Python dependencies
 │
 └── frontend/ (React + Vite)

@@ -50,7 +50,7 @@ FastAPI REST API
         ↓
 Image Preprocessing (224x224, RGB, Normalization)
         ↓
-Deep Learning Model (thyroid_cancer_model.h5)
+Deep Learning Model (from HuggingFace Hub: vaidehibh/fibonacci_cnn)
   - Custom LSTM Layers
   - DepthwiseSeparableConv
   - Avg2MaxPooling
@@ -413,8 +413,8 @@ if result['gradcam']:
 thyroid_cancer/
 │
 ├── app.py                           # FastAPI main application
+├── config.py                        # Configuration (HuggingFace settings)
 ├── requirements.txt                 # Python dependencies
-├── thyroid_cancer_model.h5          # Pre-trained model (3.5 MB)
 ├── README.md                        # This file
 │
 ├── api/                             # API layer
@@ -425,7 +425,9 @@ thyroid_cancer/
 ├── model/                           # Model layer
 │   ├── __init__.py
 │   ├── custom_layers.py             # Custom Keras layers
-│   └── model_loader.py              # Model loading utilities
+│   └── model_loader.py              # Model loading from HuggingFace
+│
+├── model_cache/                     # Downloaded model cache (auto-created)
 │
 ├── utils/                           # Utilities
 │   ├── __init__.py
@@ -532,11 +534,12 @@ pip install --upgrade -r requirements.txt
 
 **2. Model Loading Failure**
 ```bash
-# Error: "Model file 'thyroid_cancer_model.h5' not found"
-# Solution: Verify model file exists
-ls thyroid_cancer_model.h5
-
-# Should be ~3.5 MB in size
+# Error: "Failed to download model from HuggingFace"
+# Solution 1: Check internet connection
+# Solution 2: Verify HuggingFace is accessible
+# Solution 3: Clear model cache and retry
+rm -rf model_cache
+# The model will be automatically downloaded on next startup
 ```
 
 **3. Base64 Decode Errors**
