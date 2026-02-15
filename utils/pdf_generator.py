@@ -18,7 +18,7 @@ def generate_pdf_report(prediction_data: dict, gradcam_data: dict = None) -> Byt
         title_style = ParagraphStyle('CustomTitle', parent=styles['Heading1'], fontSize=24, textColor=colors.HexColor('#0066CC'), spaceAfter=30, alignment=TA_CENTER, fontName='Helvetica-Bold')
         heading_style = ParagraphStyle('CustomHeading', parent=styles['Heading2'], fontSize=16, textColor=colors.HexColor('#333333'), spaceAfter=12, spaceBefore=12, fontName='Helvetica-Bold')
         normal_style = ParagraphStyle('CustomNormal', parent=styles['Normal'], fontSize=11, spaceAfter=12, alignment=TA_LEFT)
-        elements.append(Paragraph("🦋 Thyroid Cancer Detection Report", title_style))
+        elements.append(Paragraph(" Thyroid Cancer Detection Report", title_style))
         elements.append(Spacer(1, 0.2 * inch))
         timestamp = prediction_data.get('timestamp', datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         filename = prediction_data.get('filename', 'Unknown')

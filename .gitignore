@@ -35,7 +35,7 @@ checkpoint/
 model_cache/
 
 # Streamlit
-.streamlit/
+.streamlit/secrets.toml
 
 # Jupyter Notebooks
 .ipynb_checkpoints/

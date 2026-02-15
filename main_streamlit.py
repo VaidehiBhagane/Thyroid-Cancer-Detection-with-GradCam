@@ -2,6 +2,12 @@ import streamlit as st
 from PIL import Image
 from datetime import datetime
 import json, cv2, numpy as np, matplotlib.pyplot as plt, matplotlib
+import sys
+import os
+
+# Add project root to Python path for imports
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 from utils.logger_config import configure_logging
 from utils.processing import preprocess_image
 from model.model_loader import load_model
@@ -10,9 +16,24 @@ from utils.gradcam import make_gradcam_heatmap
 matplotlib.use('Agg')
 logger = configure_logging()
 
-try: model = load_model()
+# Cache model loading to avoid reloading on every interaction
+@st.cache_resource(show_spinner="Loading AI model from HuggingFace...")
+def get_model():
+    """Load and cache the model"""
+    try:
+        return load_model()
+    except Exception as e:
+        logger.critical(f"Model init error: {e}")
+        st.error(f"❌ Failed to initialize model: {str(e)}")
+        st.error("Please check that the HuggingFace repository is accessible.")
+        st.stop()
+
+# Load model once
+try: 
+    model = get_model()
+    logger.info("Model loaded successfully")
 except Exception as e:
-    logger.critical(f"Model init error: {e}")
+    logger.critical(f"Model loading failed: {e}")
     st.error("Failed to initialize. Check logs.")
     st.stop()
 
@@ -42,19 +63,25 @@ def show_gradcam(proc, img, lbl):
         target_layer = cl[-1]
         logger.info(f"Using layer '{target_layer}' for Grad-CAM")
         
-        orig = np.array(img.resize((224,224))); orig = orig/255 if orig.max()>1 else orig
-        hm = cv2.resize(make_gradcam_heatmap(proc, model, target_layer), (224,224))
+        orig = np.array(img.resize((224,224)))
+        if orig.max() > 1:
+            orig = orig / 255.0
+        
+        hm = make_gradcam_heatmap(proc, model, target_layer)
+        hm = cv2.resize(hm, (224, 224), interpolation=cv2.INTER_LINEAR)
+        
         fig, ax = plt.subplots(1,3,figsize=(15,5))
-        for i, (a, t) in enumerate(zip(ax, ['Original','Heatmap',f'Overlay ({lbl})'])):
+        for i, (a, t) in enumerate(zip(ax, ['Original Image','Attention Heatmap',f'Grad-CAM Overlay ({lbl})'])):
             a.imshow(orig if i!=1 else hm, cmap=None if i==0 else 'jet')
             if i==2: a.imshow(hm, alpha=0.4, cmap='jet')
             a.set_title(t, fontsize=12, fontweight='bold'); a.axis('off')
         plt.tight_layout(); st.pyplot(fig); plt.close(fig)
-        st.info("💡 Red/yellow=important, Blue=less relevant")
+        st.info("💡 **Interpretation:** Red/yellow areas = high attention, Blue areas = less relevant")
         logger.info("Grad-CAM generated successfully")
     except Exception as e: 
         logger.error(f"Grad-CAM failed: {e}", exc_info=True)
         st.warning(f"⚠️ Could not generate attention map: {str(e)}")
+        st.info("This doesn't affect the prediction accuracy. The model still works correctly.")
 
 st.title("🦋 Thyroid Cancer Detection System")
 st.write("Upload a thyroid medical image (ultrasound/pathology) for AI-powered cancer detection")
@@ -85,11 +112,48 @@ if uploaded_file:
                          "recommendation":["Routine monitoring","6-12 month follow-up","Further tests","Immediate specialist consultation"][ri]}
                 st.download_button("📥 Download JSON Report", json.dumps(report, indent=2),
                                  f"thyroid_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json", "application/json")
+                st.markdown("---")
+                st.caption("⚠️ **Medical Disclaimer:** This is an AI-assisted diagnostic tool and should NOT replace professional medical diagnosis. Always consult qualified healthcare providers for final diagnosis and treatment decisions.")
                 logger.info(f"Analysis completed: {uploaded_file.name}")
-            except (FileNotFoundError, ValueError) as e: logger.error(f"Error: {e}"); st.error(f"❌ {type(e).__name__}: {e}")
-            except Exception as e: logger.error(f"Analysis error: {e}", exc_info=True); st.error(f"❌ Analysis failed: {e}")
+            except (FileNotFoundError, ValueError) as e: 
+                logger.error(f"Error: {e}"); 
+                st.error(f"❌ {type(e).__name__}: {e}")
+                st.error("Please ensure the image is a valid thyroid medical image in .png, .jpg, or .jpeg format.")
+            except Exception as e: 
+                logger.error(f"Analysis error: {e}", exc_info=True); 
+                st.error(f"❌ Analysis failed: {e}")
+                st.error("An unexpected error occurred. Please try again or contact support.")
 else:
-    st.info("👆 Please upload an image to begin")
-    with st.expander("ℹ️ Info & Guidelines"):
-        st.markdown("**Formats:** PNG, JPEG | **Min size:** 224x224px | **Output:** 0=Benign, 1=Malignant")
+    st.info("👆 Please upload a thyroid medical image to begin analysis")
+    with st.expander("ℹ️ Supported Formats & Guidelines"):
+        st.markdown("""
+        **Accepted Formats:**
+        - PNG (.png)
+        - JPEG (.jpg, .jpeg)
+        
+        **Image Guidelines:**
+        - Clear thyroid ultrasound images
+        - Pathology slides of thyroid tissue
+        - Minimum resolution: 224x224 pixels
+        - Well-lit and properly focused images
+        
+        **Model Output:**
+        - **0** → Benign (Non-cancerous)
+        - **1** → Malignant (Cancerous)
+        
+        **Risk Assessment Levels:**
+        - 🟢 Low Risk: <25% malignant probability
+        - 🔵 Borderline: 25-50% malignant probability  
+        - 🟡 Moderate Risk: 50-75% malignant probability
+        - 🔴 High Risk: ≥75% malignant probability
+        """)
+
+# Footer
+st.markdown("---")
+st.markdown("""
+<div style='text-align: center; color: #666; font-size: 0.9em;'>
+    <p>🦋 Thyroid Cancer Detection System | AI-Powered Medical Imaging Analysis</p>
+    <p>⚠️ For research and educational purposes | Not FDA approved</p>
+</div>
+""", unsafe_allow_html=True)
 
